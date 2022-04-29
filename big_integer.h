@@ -1,9 +1,30 @@
 #pragma once
 
+#include <functional>
 #include <iosfwd>
 #include <string>
+#include <vector>
 
 struct big_integer {
+private:
+  std::vector<unsigned int> n;
+
+  void swap(big_integer& other);
+  unsigned int back() const;
+  void expand_size(size_t size);
+  void pop_back_unused();
+
+  big_integer&
+  apply_bitwise_operator(big_integer const& rhs,
+                         const std::function<uint(uint, uint)>& op);
+
+  bool negative() const;
+  void negate();
+
+public:
+
+  std::string to_bin_string() const;
+
   big_integer();
   big_integer(big_integer const& other);
   big_integer(int a);
