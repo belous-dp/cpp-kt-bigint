@@ -41,7 +41,7 @@ big_integer::big_integer(std::string const& str) : sign(str[0] == '-') {
       throw err(str);
     }
   } else {
-    n.push_back(0);
+//    n.push_back(0);
   }
   for (size_t i = sign + shift; i < str.size(); i += CHUNK) {
     *this *= MUL;
@@ -54,6 +54,7 @@ big_integer::big_integer(std::string const& str) : sign(str[0] == '-') {
   if (sign) {
     negate();
   }
+  pop_back_unused();
 }
 
 big_integer::~big_integer() = default;
@@ -68,6 +69,7 @@ big_integer& big_integer::operator=(big_integer const& other) {
 
 void big_integer::swap(big_integer& other) {
   std::swap(n, other.n);
+  std::swap(sign, other.sign);
 }
 
 std::string big_integer::to_bin_string() const {
@@ -120,7 +122,7 @@ void big_integer::expand_size(size_t size) {
 }
 
 void big_integer::pop_back_unused() {
-  while (n.size() >= 2 && sext(n[n.size() - 2]) == n[n.size() - 1]) {
+  while (!n.empty() && n.back() == sext(n.back()) && msb(n.back()) == sign) {
     n.pop_back();
   }
 }
@@ -130,16 +132,18 @@ big_integer& big_integer::operator-=(big_integer const& rhs) {
 }
 
 bool big_integer::negative() const {
-  return msb(back());
+  return sign;
 }
 
 void big_integer::negate() {
-  if (n.empty())
+  if (n.empty()) {
     return;
+  }
   for (uint& i : n) {
     i = ~i;
   }
   ++*this;
+  sign ^= 1;
 }
 
 uint lo_word(unsigned long long x) {
@@ -152,8 +156,8 @@ uint hi_word(unsigned long long x) {
 }
 
 big_integer& big_integer::operator*=(big_integer const& rhs) {
-  bool sign1 = negative(), sign2 = rhs.negative();
-  if (sign1) {
+  bool sign2 = rhs.negative();
+  if (sign) {
 //    std::cerr << "this is negative" << std::endl;
     negate();
   }
@@ -178,11 +182,10 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
       carry = hi_word(mult);
     }
     add.n.push_back(carry);
-    //pop_back_unused(); // ???
     res += add;
   }
 //  std::cerr << "intermediate res:\n" << res.to_bin_string() << std::endl;
-  if (sign1 ^ sign2) {
+  if (sign ^ sign2) {
     res.negate();
   }
   if (sign2) { //todo smart pointers
@@ -369,15 +372,18 @@ big_integer big_integer::operator+() const {
 }
 
 big_integer big_integer::operator-() const {
-  if (n.empty())
-    return *this;
-  return ++~*this;
+  big_integer copy = *this;
+  copy.negate();
+  return copy;
 }
 
 big_integer big_integer::operator~() const {
   big_integer res(*this);
   for (uint& i : res.n) {
     i = ~i;
+  }
+  if (!res.n.empty()) {
+    res.sign ^= 1;
   }
   return res;
 }
