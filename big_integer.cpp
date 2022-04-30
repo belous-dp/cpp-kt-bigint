@@ -11,27 +11,28 @@
 
 using uint = unsigned int;
 
-const big_integer ZERO = big_integer(0);
+const big_integer ZERO = big_integer();
 const big_integer ONE = big_integer(1);
 
 big_integer::big_integer() = default;
 
-big_integer::big_integer(big_integer const& other) : n(other.n) {}
+big_integer::big_integer(big_integer const& other) = default;
 
-big_integer::big_integer(int a) : n(1, a) {}
+big_integer::big_integer(int a) : n(1, a), sign(a < 0) {}
+
+//big_integer::big_integer(uint a) : n(1, a) {}
 
 std::invalid_argument err(std::string const& str) {
   return std::invalid_argument("Invalid 10-based integer: " + str);
 }
 
-big_integer::big_integer(std::string const& str) {
-  bool sign = str[0] == '-';
+big_integer::big_integer(std::string const& str) : sign(str[0] == '-') {
   auto cnt = std::count(str.begin(), str.end(), '-');
   if ((str.size() - sign) == 0 || cnt > 1 || (cnt == 1 && str.find('-') != 0)) {
     throw err(str);
   }
   const size_t CHUNK = 9;
-  const big_integer MUL = 1e9;
+  const big_integer MUL = (uint)1e9;
   size_t shift = (str.size() - sign) % CHUNK;
   if (shift > 0) {
     size_t pos = 0;
@@ -96,17 +97,22 @@ uint big_integer::back() const {
 }
 
 big_integer& big_integer::operator+=(big_integer const& rhs) {
-  uint carry = 0;
   expand_size(rhs.n.size());
-  for (size_t i = 0; i < n.size(); ++i) {
+  add_from(0, n.size(), rhs);
+  pop_back_unused();
+  return *this;
+}
+
+uint big_integer::add_from(size_t from, size_t to, const big_integer& rhs) {
+  uint carry = 0;
+  for (size_t i = from, j = 0; i < to; ++i, ++j) {
     n[i] += carry;
     carry = (n[i] < carry);
-    uint add = i < rhs.n.size() ? rhs.n[i] : sext(rhs.back());
+    uint add = j < rhs.n.size() ? rhs.n[j] : sext(rhs.back());
     n[i] += add;
     carry += n[i] < add;
   }
-  pop_back_unused();
-  return *this;
+  return carry;
 }
 
 void big_integer::expand_size(size_t size) {
@@ -179,18 +185,103 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
   if (sign1 ^ sign2) {
     res.negate();
   }
-  if (sign2) {
+  if (sign2) { //todo smart pointers
     delete prhs;
   }
   *this = res;
   return *this;
 }
 
-big_integer& big_integer::operator/=(big_integer const& rhs) { // todo
+/// divides this by integer rhs, assuming that this > rhs
+uint big_integer::short_divide(uint rhs) {
+  return 0;
+}
+
+/// divides this by big_integer rhs
+// algorithm described in The Art of Computer Programming (vol.2, 3rd ed.),
+// chapter 4.3.1, p. 272
+big_integer big_integer::divide(big_integer const& rhs) {
+//  if (rhs == ZERO) {
+//    throw std::invalid_argument("division by zero");
+//  }
+//  // todo отрицательные числа, случай при rhs.back() == 0
+//  if (rhs.n.size() == 1) {
+//    return short_divide(rhs.back());
+//  }
+//  if (*this < rhs) {
+//    big_integer tmp = *this;
+//    *this = ZERO;
+//    return tmp;
+//  } else if (*this == rhs) {
+//    *this = ONE;
+//    return ZERO;
+//  }
+//  bool sign1 = negative(), sign2 = rhs.negative();
+//  if (sign1) {
+//    //    std::cerr << "this is negative" << std::endl;
+//    negate();
+//  }
+//  big_integer const* v = &rhs;
+//  if (sign2) {
+//    //    std::cerr << "rhs is negative" << std::endl;
+//    auto* tmp = new big_integer(rhs);
+//    tmp->negate();
+//    v = tmp;
+//  }
+//  if (n.back() == 0) {
+//    n.pop_back();
+//  }
+//  if (v->n.back() == 0) {
+//    v->n.pop_back();
+//  }
+//
+//  const size_t sn = v->n.size();
+//  const size_t sm = n.size() - sn;
+//  const uint b = std::numeric_limits<uint>::max();
+//  //D1
+//  uint d = b / (v->n[sn - 1] + 1);
+//  *this *= d;
+//  assert(n.size() == sm + sn + 1);
+//  std::vector<uint> quot(sm);
+//  //D2-D7
+//  for (size_t j = sm; j >= 0; --j) {
+//    //D3
+//    unsigned long long q0 = (n[j + sn] * b + n[j + sn - 1]) / v->n[sn - 1];
+//    unsigned long long r0 = (n[j + sn] * b + n[j + sn - 1]) % v->n[sn - 1];
+//    while ((q0 == b || q0 * v->n[sn - 2] > b * r0 + n[j + sn - 2]) && r0 < b) {
+//      q0--;
+//      r0 += v->n[sn - 1];
+//    }
+//    //D4-D5
+//    // at this step q <= b
+//    uint q = lo_word(q0);
+//    big_integer subt = rhs * q;
+//    subt.negate();
+//    uint neg = add_from(j, j + sn, subt);
+//    if (neg) {
+//      //D6
+//      q--;
+//      add_from(j, j + sn, rhs);
+//    }
+//    quot[j] = q;
+//  }
+//  short_divide(d);
+//  big_integer rem = *this;
+//  n = quot;
+//  if (sign2) {
+//    delete v;
+//  }
+//  return rem;
   return *this;
 }
 
-big_integer& big_integer::operator%=(big_integer const& rhs) { // todo
+big_integer& big_integer::operator/=(big_integer const& rhs) {
+  divide(rhs);
+  return *this;
+}
+
+big_integer& big_integer::operator%=(big_integer const& rhs) {
+  *this = divide(rhs);
   return *this;
 }
 

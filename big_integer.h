@@ -5,9 +5,12 @@
 #include <string>
 #include <vector>
 
+using uint = unsigned int;
+
 struct big_integer {
 private:
-  std::vector<unsigned int> n;
+  std::vector<uint> n;
+  bool sign = false;
 
   void swap(big_integer& other);
   unsigned int back() const;
@@ -20,6 +23,12 @@ private:
 
   bool negative() const;
   void negate();
+
+//  big_integer(uint a);
+  uint short_divide(uint rhs);
+  big_integer divide(big_integer const& rhs);
+
+  uint add_from(size_t from, size_t to, const big_integer& rhs);
 
 public:
 
