@@ -11,9 +11,6 @@
 
 using uint = unsigned int;
 
-//todo пересмотреть код, потому что конструктор по-умолчанию не создает вектор
-// но должен считаться как 0
-
 const big_integer ZERO = big_integer(0);
 const big_integer ONE = big_integer(1);
 
@@ -23,7 +20,40 @@ big_integer::big_integer(big_integer const& other) : n(other.n) {}
 
 big_integer::big_integer(int a) : n(1, a) {}
 
-big_integer::big_integer(std::string const& str) {} // todo
+std::invalid_argument err(std::string const& str) {
+  return std::invalid_argument("Invalid 10-based integer: " + str);
+}
+
+big_integer::big_integer(std::string const& str) {
+  bool sign = str[0] == '-';
+  auto cnt = std::count(str.begin(), str.end(), '-');
+  if ((str.size() - sign) == 0 || cnt > 1 || (cnt == 1 && str.find('-') != 0)) {
+    throw err(str);
+  }
+  const size_t CHUNK = 9;
+  const big_integer MUL = 1e9;
+  size_t shift = (str.size() - sign) % CHUNK;
+  if (shift > 0) {
+    size_t pos = 0;
+    n.push_back(std::stoi(str.substr(sign, shift), &pos));
+    if (pos != shift) {
+      throw err(str);
+    }
+  } else {
+    n.push_back(0);
+  }
+  for (size_t i = sign + shift; i < str.size(); i += CHUNK) {
+    *this *= MUL;
+    size_t pos = 0;
+    *this += std::stoi(str.substr(i, CHUNK), &pos);
+    if (pos != CHUNK) {
+      throw err(str);
+    }
+  }
+  if (sign) {
+    negate();
+  }
+}
 
 big_integer::~big_integer() = default;
 
@@ -98,6 +128,8 @@ bool big_integer::negative() const {
 }
 
 void big_integer::negate() {
+  if (n.empty())
+    return;
   for (uint& i : n) {
     i = ~i;
   }
@@ -116,20 +148,22 @@ uint hi_word(unsigned long long x) {
 big_integer& big_integer::operator*=(big_integer const& rhs) {
   bool sign1 = negative(), sign2 = rhs.negative();
   if (sign1) {
-    std::cerr << "this is negative" << std::endl;
+//    std::cerr << "this is negative" << std::endl;
     negate();
   }
   big_integer const* prhs = &rhs;
   if (sign2) {
-    std::cerr << "rhs is negative" << std::endl;
+//    std::cerr << "rhs is negative" << std::endl;
     auto* tmp = new big_integer(rhs);
     tmp->negate();
     prhs = tmp;
   }
-  std::cerr << "prhs:\n" << prhs->to_bin_string() << std::endl;
+//  std::cerr << "lhs:\n" << to_bin_string() << std::endl;
+//  std::cerr << "rhs:\n" << prhs->to_bin_string() << std::endl;
   big_integer res = 0;
   for (size_t i = 0; i < prhs->n.size(); ++i) {
     big_integer add;
+    add.n.resize(i, 0);
     uint carry = 0;
     for (size_t j = 0; j < n.size(); ++j) {
       unsigned long long mult = n[j] * 1ULL * prhs->n[i];
@@ -141,7 +175,7 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
     //pop_back_unused(); // ???
     res += add;
   }
-  std::cerr << "intermediate res:\n" << res.to_bin_string() << std::endl;
+//  std::cerr << "intermediate res:\n" << res.to_bin_string() << std::endl;
   if (sign1 ^ sign2) {
     res.negate();
   }
@@ -185,11 +219,57 @@ big_integer& big_integer::operator^=(big_integer const& rhs) {
   return apply_bitwise_operator(rhs, std::bit_xor<>());
 }
 
-big_integer& big_integer::operator<<=(int rhs) { // todo
+big_integer& big_integer::operator<<=(int shift) {
+  assert(shift >= 0);
+  int d = shift / std::numeric_limits<uint>::digits;
+  int r = shift % std::numeric_limits<uint>::digits;
+  if (d > 0) {
+    std::reverse(n.begin(), n.end());
+    while (d--) {
+      n.push_back(0);
+    }
+    std::reverse(n.begin(), n.end());
+  }
+  if (r > 0) {
+    expand_size(n.size() + 1);
+    for (size_t i = n.size(); i > 1; --i) {
+      n[i - 1] <<= r;
+      n[i - 1] |= n[i - 2] >> (std::numeric_limits<uint>::digits - r);
+    }
+    if (!n.empty()) {
+      n[0] <<= r;
+    }
+  }
+  pop_back_unused();
   return *this;
 }
 
-big_integer& big_integer::operator>>=(int rhs) { // todo
+
+big_integer& big_integer::operator>>=(int shift) {
+  assert(shift >= 0);
+  int d = shift / std::numeric_limits<uint>::digits;
+  int r = shift % std::numeric_limits<uint>::digits;
+  if (d > 0) {
+    std::reverse(n.begin(), n.end());
+    while (!n.empty() && d--) {
+      n.pop_back();
+    }
+    std::reverse(n.begin(), n.end());
+  }
+  if (r > 0) {
+    for (size_t i = 1; i < n.size(); ++i) {
+      n[i - 1] >>= r;
+      n[i - 1] |= n[i] << (std::numeric_limits<uint>::digits - r);
+    }
+    if (!n.empty()) {
+      uint tail = sext(n.back());
+      n.back() >>= r;
+      tail >>= (std::numeric_limits<uint>::digits - r);
+      tail <<= (std::numeric_limits<uint>::digits - r);
+      n.back() |= tail;
+    }
+  }
+  pop_back_unused();
   return *this;
 }
 
@@ -198,6 +278,8 @@ big_integer big_integer::operator+() const {
 }
 
 big_integer big_integer::operator-() const {
+  if (n.empty())
+    return *this;
   return ++~*this;
 }
 
@@ -214,7 +296,9 @@ big_integer& big_integer::operator++() {
 }
 
 big_integer big_integer::operator++(int) {
-  return *this + ONE;
+  big_integer copy = *this;
+  ++*this;
+  return copy;
 }
 
 big_integer& big_integer::operator--() {
@@ -222,7 +306,9 @@ big_integer& big_integer::operator--() {
 }
 
 big_integer big_integer::operator--(int) {
-  return *this - ONE;
+  big_integer copy = *this;
+  --*this;
+  return copy;
 }
 
 big_integer operator+(big_integer a, big_integer const& b) {
@@ -266,19 +352,35 @@ big_integer operator>>(big_integer a, int b) {
 }
 
 bool operator==(big_integer const& a, big_integer const& b) {
-  return a.n == b.n;
+//  std::cerr << "a:" << std::endl;
+//  std::cerr << a.to_bin_string() << std::endl;
+//  std::cerr << "b:" << std::endl;
+//  std::cerr << b.to_bin_string() << std::endl;
+  return a.n == b.n || (a.n.size() <= 1 && b.n.size() <= 1 && a.back() == b.back());
 }
 
 bool operator!=(big_integer const& a, big_integer const& b) {
   return !(a == b);
 }
 
-bool operator<(big_integer const& a, big_integer const& b) { // todo
-  return true;
+bool operator<(big_integer const& a, big_integer const& b) {
+  if (a.negative() ^ b.negative()) {
+    return a.negative() && !b.negative();
+  }
+  bool inv = a.negative();
+  if (a.n.size() != b.n.size()) {
+    return (a.n.size() < b.n.size()) ^ inv;
+  }
+  for (size_t i = a.n.size(); i > 0; --i) {
+    if (a.n[i - 1] != b.n[i - 1]) {
+      return (a.n[i - 1] < b.n[i - 1]) ^ inv;
+    }
+  }
+  return false;
 }
 
-bool operator>(big_integer const& a, big_integer const& b) { // todo
-  return true;
+bool operator>(big_integer const& a, big_integer const& b) {
+  return !(a < b || a == b);
 }
 
 bool operator<=(big_integer const& a, big_integer const& b) {

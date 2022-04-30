@@ -43,8 +43,8 @@ public:
   big_integer& operator|=(big_integer const& rhs);
   big_integer& operator^=(big_integer const& rhs);
 
-  big_integer& operator<<=(int rhs);
-  big_integer& operator>>=(int rhs);
+  big_integer& operator<<=(int shift);
+  big_integer& operator>>=(int shift);
 
   big_integer operator+() const;
   big_integer operator-() const;
