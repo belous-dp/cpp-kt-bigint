@@ -10,7 +10,6 @@ using uint = unsigned int;
 struct big_integer {
 private:
   std::vector<uint> n;
-  bool sign = false;
 
   void swap(big_integer& other);
   unsigned int back() const;
@@ -24,7 +23,6 @@ private:
   bool negative() const;
   void negate();
 
-//  big_integer(uint a);
   uint short_divide(uint rhs);
   big_integer divide(big_integer const& rhs);
 
@@ -37,6 +35,12 @@ public:
   big_integer();
   big_integer(big_integer const& other);
   big_integer(int a);
+  big_integer(uint a);
+  big_integer(long a);
+  big_integer(unsigned long a);
+  big_integer(long long a);
+  big_integer(unsigned long long a);
+
   explicit big_integer(std::string const& str);
   ~big_integer();
 
