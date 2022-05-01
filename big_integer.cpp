@@ -48,8 +48,7 @@ uint hi_word(unsigned long long x) {
 
 big_integer::big_integer(int a) : n(1, a) { }
 
-big_integer::big_integer(uint a) : n(1, a) {
-  n.push_back(0);
+big_integer::big_integer(uint a) : n({a, 0}) {
   pop_back_unused();
 }
 
@@ -57,8 +56,7 @@ big_integer::big_integer(long a) : n({lo_word(a), hi_word(a)}) {
   pop_back_unused();
 }
 
-big_integer::big_integer(unsigned long a) : n({lo_word(a), hi_word(a)}) {
-  n.push_back(0);
+big_integer::big_integer(unsigned long a) : n({lo_word(a), hi_word(a), 0}) {
   pop_back_unused();
 }
 
@@ -66,8 +64,7 @@ big_integer::big_integer(long long a) : n({lo_word(a), hi_word(a)}) {
   pop_back_unused();
 }
 
-big_integer::big_integer(unsigned long long a) : n({lo_word(a), hi_word(a)}) {
-  n.push_back(0);
+big_integer::big_integer(unsigned long long a) : n({lo_word(a), hi_word(a), 0}) {
   pop_back_unused();
 }
 
@@ -92,8 +89,6 @@ big_integer::big_integer(std::string const& str) {
     if (pos != shift) {
       throw err(str);
     }
-  } else {
-    n.push_back(0);
   }
   for (size_t i = sign + shift; i < str.size(); i += CHUNK) {
     *this *= MUL;
@@ -149,7 +144,7 @@ uint big_integer::add_from(size_t from, size_t to, const big_integer& rhs) {
     carry = (n[i] < carry);
     uint add = j < rhs.n.size() ? rhs.n[j] : sext(rhs.back());
     n[i] += add;
-    carry += n[i] < add;
+    carry += (n[i] < add);
   }
   return carry;
 }
@@ -159,6 +154,8 @@ void big_integer::expand_size(size_t size) {
 }
 
 void big_integer::pop_back_unused() {
+  // если последний разряд все 1, и предпоследний точно отрицательный,
+  // либо если последний разряд все 0 и предпоследний точно положительный
   while (n.size() >= 2 && sext(n[n.size() - 2]) == n[n.size() - 1]) {
     n.pop_back();
   }
@@ -181,6 +178,9 @@ void big_integer::negate() {
   ++*this;
 }
 
+// обычное умножение в столбик. Умножаем this на последний разряд,
+// складываем, учитывая смещение на B^шаг
+// здесь и далее B или b это размер разряда, т.е. MAX_UINT
 big_integer& big_integer::operator*=(big_integer const& rhs) {
   bool sign1 = negative(), sign2 = rhs.negative();
   if (sign1) {
@@ -217,6 +217,7 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
 }
 
 /// divides this by integer rhs, assuming that this > rhs > 0
+/// returns reminder
 uint big_integer::short_divide(uint rhs) {
   uint r = 0;
   n.push_back(0);
@@ -230,7 +231,12 @@ uint big_integer::short_divide(uint rhs) {
   return r;
 }
 
+size_t div_size(std::vector<uint> const& v) {
+  return v.size() - (!v.empty() && v.back() == 0);
+}
+
 /// divides this by big_integer rhs
+/// returns reminder
 // algorithm described in The Art of Computer Programming (vol.2, 3rd ed.),
 // chapter 4.3.1, p. 272
 big_integer big_integer::divide(big_integer const& rhs) {
@@ -241,6 +247,7 @@ big_integer big_integer::divide(big_integer const& rhs) {
     *this = ONE;
     return ZERO;
   }
+
   bool sign1 = negative(), sign2 = rhs.negative();
   bool sign = sign1 ^ sign2;
   if (sign1) {
@@ -250,48 +257,28 @@ big_integer big_integer::divide(big_integer const& rhs) {
   if (sign2) {
     v.negate();
   }
-  bool removed_back_zero_u = false;
-  if (n.back() == 0) {
-    n.pop_back();
-    removed_back_zero_u = true;
-  }
-  bool removed_back_zero_v = false;
-  if (v.n.back() == 0) {
-    v.n.pop_back();
-    removed_back_zero_v = true;
-  }
-  if (v.n.size() == 1) {
-    big_integer rem = short_divide(v.back());
+
+  if (div_size(v.n) == 1) {
+    big_integer rem = short_divide(v.n[0]);
     if (sign) {
       negate();
     }
     return (sign ^ sign2) ? -rem : rem;
   }
-  if (n.size() < v.n.size()) {
-    if (removed_back_zero_u) {
-      n.push_back(0);
-    }
+  if (div_size(n) < div_size(v.n)) {
     big_integer rem = (sign ^ sign2) ? -*this : *this;
     *this = ZERO;
     return rem;
   }
-  const size_t sn = v.n.size();
-  const size_t sm = n.size() - sn;
+
+
+  const size_t sn = div_size(v.n);
+  const size_t sm = div_size(n) - sn;
   const unsigned long long b = std::numeric_limits<uint>::max() + 1ULL;
   // D1
   uint d = b / (v.n[sn - 1] + 1);
-  if (removed_back_zero_u) {
-    n.push_back(0);
-  }
   *this *= d;
-  if (n.back() == 0) {
-    n.pop_back();
-  }
   v *= d;
-  if (v.n.back() == 0) {
-    v.n.pop_back();
-    removed_back_zero_v = true;
-  }
   if (n.size() < sm + sn + 1) {
     n.push_back(0);
   }
@@ -311,20 +298,20 @@ big_integer big_integer::divide(big_integer const& rhs) {
     //  at this step q <= b
     uint q = lo_word(q0);
 
-    if (removed_back_zero_v) {
-      v.n.push_back(0);
-    }
     big_integer subt = v * q;
-    if (removed_back_zero_v) {
-      v.n.pop_back();
-    }
-    if (subt.n.size() != sn + 1) {
-      subt.n.push_back(0);
-    }
     subt.negate();
-    uint neg = add_from(j, j + sn + 1, subt);
-    if (!neg && subt != 0) {
+    uint carry = add_from(j, j + sn + 1, subt);
+    if (!carry && subt != 0) {
       // D6
+      // нам нужно как-то понять, происходил заём или нет
+      // вместо вычитания из u v*q сделаем u += v*q (в соответствующих разрядах)
+      // как я рассуждал:
+      // пусть в последнем разряде произошёл перенос
+      // это значит, что в следующем разряде после последнего мы сделаем
+      // u[x] + 1 + (v*q)[y],
+      // но (v*q)[y] = -1, т.к. у нас дополнение до двух, а мы прибавляем отрицательное число.
+      // Тогда u[x] не изменится, значит при вычитании мы из него ничего не занимали
+      // единственное исключение из этого правила -- когда вычитаем 0.
       q--;
       add_from(j, j + sn + 1, v);
     }
