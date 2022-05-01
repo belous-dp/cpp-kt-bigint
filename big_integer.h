@@ -9,7 +9,6 @@ using uint = unsigned int;
 
 struct big_integer {
 private:
-  const static big_integer ZERO;
   const static big_integer ONE;
 
   std::vector<uint> n;
@@ -24,6 +23,8 @@ private:
 
   bool negative() const;
   void negate();
+
+  bool is_zero() const;
 
   void short_multiply(uint rhs);
 

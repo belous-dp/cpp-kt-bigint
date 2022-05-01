@@ -30,7 +30,6 @@
 
 using uint = unsigned int;
 
-const big_integer big_integer::ZERO = big_integer();
 const big_integer big_integer::ONE = big_integer(1);
 
 big_integer::big_integer() = default;
@@ -200,19 +199,17 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
   if (sign1) {
     negate();
   }
-  big_integer const* prhs = &rhs;
+  big_integer v = rhs;
   if (sign2) {
-    auto* tmp = new big_integer(rhs); // todo убрать аллокацию?
-    tmp->negate();
-    prhs = tmp;
+    v.negate();
   }
   big_integer res = 0;
-  for (size_t i = 0; i < prhs->n.size(); ++i) {
+  for (size_t i = 0; i < v.n.size(); ++i) {
     big_integer add;
     add.n.resize(i + n.size() + 1);
     uint carry = 0;
     for (size_t j = 0; j < n.size(); ++j) {
-      unsigned long long mult = n[j] * 1ULL * prhs->n[i];
+      unsigned long long mult = n[j] * 1ULL * v.n[i];
       mult += carry;
       add.n[i + j] = lo_word(mult);
       carry = hi_word(mult);
@@ -222,9 +219,6 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
   }
   if (sign1 ^ sign2) {
     res.negate();
-  }
-  if (sign2) {
-    delete prhs;
   }
   *this = res;
   return *this;
@@ -249,17 +243,21 @@ size_t div_size(std::vector<uint> const& v) {
   return v.size() - (!v.empty() && v.back() == 0);
 }
 
+bool big_integer::is_zero() const {
+  return n.size() <= 1 && back() == 0;
+}
+
 /// divides this by big_integer rhs
 /// returns reminder
 // algorithm described in The Art of Computer Programming (vol.2, 3rd ed.),
 // chapter 4.3.1, p. 272
 big_integer big_integer::divide(big_integer const& rhs) {
-  if (rhs == ZERO) {
+  if (rhs.is_zero()) {
     throw std::invalid_argument("division by zero");
   }
   if (*this == rhs) {
     *this = ONE;
-    return ZERO;
+    return {}; // reminder is zero
   }
 
   bool sign1 = negative(), sign2 = rhs.negative();
@@ -281,7 +279,7 @@ big_integer big_integer::divide(big_integer const& rhs) {
     rem = short_divide(v.n[0]);
   } else if (div_size(n) < div_size(v.n)) {
     rem = *this;
-    *this = ZERO;
+    n.clear(); // *this = 0
   } else {
 
     const size_t sn = div_size(v.n);
@@ -576,7 +574,7 @@ std::string to_string(big_integer const& a) {
   const size_t CHUNK = 9;
   const uint DIV = (uint)1e9;
   std::string res;
-  while (b != big_integer::ZERO) {
+  while (!b.is_zero()) {
     std::string cur = std::to_string(b.short_divide(DIV));
     std::reverse(cur.begin(), cur.end());
     while (cur.size() < CHUNK) {
