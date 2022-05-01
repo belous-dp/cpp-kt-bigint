@@ -30,8 +30,8 @@
 
 using uint = unsigned int;
 
-const big_integer ZERO = big_integer();
-const big_integer ONE = big_integer(1);
+const big_integer big_integer::ZERO = big_integer();
+const big_integer big_integer::ONE = big_integer(1);
 
 big_integer::big_integer() = default;
 
@@ -132,12 +132,12 @@ uint big_integer::back() const {
 
 big_integer& big_integer::operator+=(big_integer const& rhs) {
   expand_size(rhs.n.size());
-  add_from(0, n.size(), rhs);
+  add_segment(0, n.size(), rhs);
   pop_back_unused();
   return *this;
 }
 
-uint big_integer::add_from(size_t from, size_t to, const big_integer& rhs) {
+uint big_integer::add_segment(size_t from, size_t to, const big_integer& rhs) {
   uint carry = 0;
   for (size_t i = from, j = 0; i < to; ++i, ++j) {
     n[i] += carry;
@@ -209,15 +209,15 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
   big_integer res = 0;
   for (size_t i = 0; i < prhs->n.size(); ++i) {
     big_integer add;
-    add.n.resize(i, 0);
+    add.n.resize(i + n.size() + 1);
     uint carry = 0;
-    for (uint j : n) {
-      unsigned long long mult = j * 1ULL * prhs->n[i];
+    for (size_t j = 0; j < n.size(); ++j) {
+      unsigned long long mult = n[j] * 1ULL * prhs->n[i];
       mult += carry;
-      add.n.push_back(lo_word(mult));
+      add.n[i + j] = lo_word(mult);
       carry = hi_word(mult);
     }
-    add.n.push_back(carry);
+    add.n.back() = carry;
     res += add;
   }
   if (sign1 ^ sign2) {
@@ -263,7 +263,6 @@ big_integer big_integer::divide(big_integer const& rhs) {
   }
 
   bool sign1 = negative(), sign2 = rhs.negative();
-  bool sign = sign1 ^ sign2;
   if (sign1) {
     negate();
   }
@@ -272,81 +271,83 @@ big_integer big_integer::divide(big_integer const& rhs) {
     v.negate();
   }
 
-  if (div_size(v.n) == 1) { // todo объединить ифы в одну ветку
-    big_integer rem = short_divide(v.n[0]);
-    if (sign) {
-      negate();
-    }
-    return (sign ^ sign2) ? -rem : rem;
-  }
-  if (div_size(n) < div_size(v.n)) {
-    big_integer rem = (sign ^ sign2) ? -*this : *this;
-    *this = ZERO;
-    return rem;
-  }
-
-
-  const size_t sn = div_size(v.n);
-  const size_t sm = div_size(n) - sn;
-  const unsigned long long b = std::numeric_limits<uint>::max() + 1ULL;
-  // D1
-  uint d = b / (v.n[sn - 1] + 1);
-  *this *= d;
-  v *= d;
-  if (n.size() < sm + sn + 1) {
-    n.push_back(0);
-  }
-  assert(n.size() == sm + sn + 1);
-  // quotient stored in the greatest sm + 1 blocks of n
-  // reminder stored in the lowest sn blocks of n
-  // D2-D7
-  for (size_t j = sm; j >= 0; --j) {
-    // D3
-    unsigned long long q0 = (n[j + sn] * b + n[j + sn - 1]) / v.n[sn - 1];
-    unsigned long long r0 = (n[j + sn] * b + n[j + sn - 1]) % v.n[sn - 1];
-    while ((q0 == b || q0 * v.n[sn - 2] > b * r0 + n[j + sn - 2]) && r0 < b) {
-      q0--;
-      r0 += v.n[sn - 1];
-    }
-    // D4-D5
-    //  at this step q <= b
-    uint q = lo_word(q0);
-
-    big_integer subt = v * q;
-    subt.negate();
-    uint carry = add_from(j, j + sn + 1, subt);
-    if (!carry && subt != 0) {
-      // D6
-      // нам нужно как-то понять, происходил заём или нет
-      // вместо вычитания из u v*q сделаем u += v*q (в соответствующих разрядах)
-      // как я рассуждал:
-      // пусть в последнем разряде произошёл перенос
-      // это значит, что в следующем разряде после последнего мы сделаем
-      // u[x] + 1 + (v*q)[y],
-      // но (v*q)[y] = -1, т.к. у нас дополнение до двух, а мы прибавляем отрицательное число.
-      // Тогда u[x] не изменится, значит при вычитании мы из него ничего не занимали
-      // единственное исключение из этого правила -- когда вычитаем 0.
-      q--;
-      add_from(j, j + sn + 1, v);
-    }
-    n[j + sn] = q;
-    if (j == 0) {
-      break;
-    }
-  }
+  // для большей читаемости объединил несколько разных ифов в один
+  // возможно, это будет лучше или хуже по количеству аллокаций:
+  // https://t.me/c/1783722918/2323
+  // но вроде из-за всякой магии с move ничего не изменится
+  // можно сравнить текущую версию с предыдущим коммитом
   big_integer rem;
-  std::reverse(n.begin(), n.end());
-  while (n.size() > sm + 1) {
-    rem.n.push_back(n.back());
-    n.pop_back();
+  if (div_size(v.n) == 1) {
+    rem = short_divide(v.n[0]);
+  } else if (div_size(n) < div_size(v.n)) {
+    rem = *this;
+    *this = ZERO;
+  } else {
+
+    const size_t sn = div_size(v.n);
+    const size_t sm = div_size(n) - sn;
+    const unsigned long long b = std::numeric_limits<uint>::max() + 1ULL;
+    // D1
+    uint d = b / (v.n[sn - 1] + 1);
+    *this *= d;
+    v *= d;
+    if (n.size() < sm + sn + 1) {
+      n.push_back(0);
+    }
+    assert(n.size() == sm + sn + 1);
+    // quotient stored in the greatest sm + 1 blocks of n
+    // reminder stored in the lowest sn blocks of n
+    // D2-D7
+    for (size_t j = sm; j >= 0; --j) {
+      // D3
+      unsigned long long q0 = (n[j + sn] * b + n[j + sn - 1]) / v.n[sn - 1];
+      unsigned long long r0 = (n[j + sn] * b + n[j + sn - 1]) % v.n[sn - 1];
+      while ((q0 == b || q0 * v.n[sn - 2] > b * r0 + n[j + sn - 2]) && r0 < b) {
+        q0--;
+        r0 += v.n[sn - 1];
+      }
+      // D4-D5
+      //  at this step q < b
+      uint q = lo_word(q0);
+
+      big_integer subt = v * q;
+      subt.negate();
+      uint carry = add_segment(j, j + sn + 1, subt);
+      if (!carry && subt != 0) {
+        // D6
+        // нам нужно как-то понять, происходил заём или нет
+        // вместо вычитания из u v*q сделаем u += v*q (в соответствующих разрядах)
+        // как я рассуждал:
+        // пусть в последнем разряде произошёл перенос. это значит, что
+        // в следующем разряде после последнего мы сделаем u[x] + 1 + (v*q)[y].
+        // но (v*q)[y] = -1, т.к. у нас дополнение до двух, а мы прибавляем отрицательное число.
+        // Тогда u[x] не изменится, значит при вычитании мы из него ничего не занимали
+        // единственное исключение из этого правила -- когда вычитаем 0.
+        q--;
+        add_segment(j, j + sn + 1, v);
+      }
+      n[j + sn] = q;
+      if (j == 0) {
+        break;
+      }
+    }
+    // хотим вытащить нижние sn разрядов в rem, и затем удалить
+    auto nth = n.begin();
+    std::advance(nth, sn);
+    rem.n = std::vector<uint>(n.begin(), nth);
+    rem.short_divide(d);
+    n.erase(n.begin(), nth);
+    pop_back_unused();
+
   }
-  rem.short_divide(d);
-  std::reverse(n.begin(), n.end());
-  pop_back_unused();
-  if (sign) {
+
+  if (sign1 ^ sign2) {
     negate();
   }
-  return (sign ^ sign2) ? -rem : rem;
+  if (sign1) {
+    rem.negate();
+  }
+  return rem;
 }
 
 big_integer& big_integer::operator/=(big_integer const& rhs) {
@@ -391,9 +392,7 @@ big_integer& big_integer::operator<<=(int shift) {
   int r = shift % std::numeric_limits<uint>::digits;
   if (d > 0) {
     std::reverse(n.begin(), n.end());
-    while (d--) {
-      n.push_back(0);
-    }
+    n.resize(n.size() + d, 0);
     std::reverse(n.begin(), n.end());
   }
   if (r > 0) {
@@ -416,8 +415,10 @@ big_integer& big_integer::operator>>=(int shift) {
   int r = shift % std::numeric_limits<uint>::digits;
   if (d > 0) {
     std::reverse(n.begin(), n.end());
-    while (!n.empty() && d--) {
-      n.pop_back();
+    if (n.size() > d) {
+      n.resize(n.size() - d);
+    } else {
+      n.clear();
     }
     std::reverse(n.begin(), n.end());
   }
@@ -575,11 +576,11 @@ std::string to_string(big_integer const& a) {
   const size_t CHUNK = 9;
   const uint DIV = (uint)1e9;
   std::string res;
-  while (b != ZERO) {
+  while (b != big_integer::ZERO) {
     std::string cur = std::to_string(b.short_divide(DIV));
     std::reverse(cur.begin(), cur.end());
     while (cur.size() < CHUNK) {
-      cur.push_back('0');
+      cur +='0';
     }
     res += cur;
   }

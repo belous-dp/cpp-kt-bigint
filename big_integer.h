@@ -9,6 +9,9 @@ using uint = unsigned int;
 
 struct big_integer {
 private:
+  const static big_integer ZERO;
+  const static big_integer ONE;
+
   std::vector<uint> n;
 
   unsigned int back() const;
@@ -27,7 +30,7 @@ private:
   uint short_divide(uint rhs);
   big_integer divide(big_integer const& rhs);
 
-  uint add_from(size_t from, size_t to, const big_integer& rhs);
+  uint add_segment(size_t from, size_t to, const big_integer& rhs);
 
 public:
   big_integer();
