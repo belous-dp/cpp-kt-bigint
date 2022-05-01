@@ -11,7 +11,6 @@ struct big_integer {
 private:
   std::vector<uint> n;
 
-  void swap(big_integer& other);
   unsigned int back() const;
   void expand_size(size_t size);
   void pop_back_unused();
@@ -29,9 +28,6 @@ private:
   uint add_from(size_t from, size_t to, const big_integer& rhs);
 
 public:
-
-  std::string to_bin_string() const;
-
   big_integer();
   big_integer(big_integer const& other);
   big_integer(int a);
@@ -43,6 +39,8 @@ public:
 
   explicit big_integer(std::string const& str);
   ~big_integer();
+
+  void swap(big_integer& other);
 
   big_integer& operator=(big_integer const& other);
 
@@ -76,6 +74,7 @@ public:
   friend bool operator<=(big_integer const& a, big_integer const& b);
   friend bool operator>=(big_integer const& a, big_integer const& b);
 
+  std::string to_bin_string() const;
   friend std::string to_string(big_integer const& a);
 };
 
