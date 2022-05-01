@@ -252,13 +252,13 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
 /// divides this by integer rhs, assuming that this > rhs > 0
 uint big_integer::short_divide(uint rhs) {
   uint r = 0;
-  std::vector<uint> q(n.size() + 1);
+  n.push_back(0);
   const unsigned long long b = std::numeric_limits<uint>::max() + 1ULL;
   for (size_t j = n.size(); j > 0; --j) {
-    q[j - 1] = lo_word((r * b + n[j - 1]) / rhs); // в принципе можно и без lo_word
-    r = lo_word((r * b + n[j - 1]) % rhs); // в принципе можно и без lo_word
+    uint tmp = n[j - 1];
+    n[j - 1] = lo_word((r * b + tmp) / rhs); // в принципе можно и без lo_word
+    r = lo_word((r * b + tmp) % rhs); // в принципе можно и без lo_word
   }
-  n = q;
   pop_back_unused();
   return r;
 }
@@ -270,11 +270,6 @@ big_integer big_integer::divide(big_integer const& rhs) {
   if (rhs == ZERO) {
     throw std::invalid_argument("division by zero");
   }
-/*  if (*this < rhs) {
-    big_integer tmp = *this;
-    *this = ZERO;
-    return tmp;
-  } else */
   if (*this == rhs) {
     *this = ONE;
     return ZERO;
@@ -290,11 +285,15 @@ big_integer big_integer::divide(big_integer const& rhs) {
     //    std::cerr << "rhs is negative" << std::endl;
     v.negate();
   }
+  bool removed_back_zero_u = false;
   if (n.back() == 0) {
     n.pop_back();
+    removed_back_zero_u = true;
   }
+  bool removed_back_zero_v = false;
   if (v.n.back() == 0) {
     v.n.pop_back();
+    removed_back_zero_v = true;
   }
   if (v.n.size() == 1) {
     big_integer rem = short_divide(v.back());
@@ -315,23 +314,39 @@ big_integer big_integer::divide(big_integer const& rhs) {
 //      return rem;
 //    }
   }
+  if (n.size() < v.n.size()) {
+//    std::cout << "u.size < v.size" << std::endl;
+    if (removed_back_zero_u) {
+      n.push_back(0);
+    }
+    big_integer rem = (sign ^ sign2) ? -*this :*this;
+    *this = ZERO;
+    return rem;
+  }
   const size_t sn = v.n.size();
   const size_t sm = n.size() - sn;
   const unsigned long long b = std::numeric_limits<uint>::max() + 1ULL;
   //D1
   uint d = b / (v.n[sn - 1] + 1);
+  if (removed_back_zero_u) {
+    n.push_back(0);
+  }
   *this *= d;
+  if (n.back() == 0) {
+    n.pop_back();
+    removed_back_zero_u = true;
+  }
   v *= d;
-  bool removed_back_zero = false;
   if (v.n.back() == 0) {
     v.n.pop_back();
-    removed_back_zero = true;
+    removed_back_zero_v = true;
   }
   if (n.size() < sm + sn + 1) {
     n.push_back(0);
   }
   assert(n.size() == sm + sn + 1);
-  std::vector<uint> quot(sm + 1);
+  // quotient stored in the greatest sm + 1 blocks of n
+  // reminder stored in the lowest sn blocks of n
   //D2-D7
   for (size_t j = sm; j >= 0; --j) {
     //D3
@@ -345,11 +360,11 @@ big_integer big_integer::divide(big_integer const& rhs) {
     // at this step q <= b
     uint q = lo_word(q0);
 
-    if (removed_back_zero) {
+    if (removed_back_zero_v) {
       v.n.push_back(0);
     }
     big_integer subt = v * q;
-    if (removed_back_zero) {
+    if (removed_back_zero_v) {
       v.n.pop_back();
     }
     if (subt.n.size() != sn + 1) {
@@ -373,14 +388,19 @@ big_integer big_integer::divide(big_integer const& rhs) {
       q--;
       add_from(j, j + sn + 1, v);
     }
-    quot[j] = q;
+    n[j + sn] = q;
     if (j == 0) {
       break;
     }
   }
-  short_divide(d);
-  big_integer rem = *this;
-  n = quot;
+  big_integer rem;
+  std::reverse(n.begin(), n.end());
+  while (n.size() > sm + 1) {
+    rem.n.push_back(n.back());
+    n.pop_back();
+  }
+  rem.short_divide(d);
+  std::reverse(n.begin(), n.end());
   pop_back_unused();
   if (sign) {
 //    std::cerr << "negating quotient. intermediate quotient:" << std::endl;
@@ -577,13 +597,12 @@ bool operator<(big_integer const& a, big_integer const& b) {
   if (a.negative() ^ b.negative()) {
     return a.negative() && !b.negative();
   }
-  bool inv = a.negative();
   if (a.n.size() != b.n.size()) {
-    return (a.n.size() < b.n.size()) ^ inv;
+    return (a.n.size() < b.n.size()) ^ a.negative();
   }
   for (size_t i = a.n.size(); i > 0; --i) {
     if (a.n[i - 1] != b.n[i - 1]) {
-      return (a.n[i - 1] < b.n[i - 1]) ^ inv;
+      return a.n[i - 1] < b.n[i - 1];
     }
   }
   return false;
