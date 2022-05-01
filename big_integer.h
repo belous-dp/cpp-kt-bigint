@@ -22,6 +22,8 @@ private:
   bool negative() const;
   void negate();
 
+  void short_multiply(uint rhs);
+
   uint short_divide(uint rhs);
   big_integer divide(big_integer const& rhs);
 

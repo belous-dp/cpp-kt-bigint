@@ -81,7 +81,7 @@ big_integer::big_integer(std::string const& str) {
     throw err(str);
   }
   const size_t CHUNK = 9;
-  const big_integer MUL = (uint)1e9;
+  const uint MUL = (uint)1e9;
   size_t shift = (str.size() - sign) % CHUNK;
   if (shift > 0) {
     size_t pos = 0;
@@ -91,7 +91,7 @@ big_integer::big_integer(std::string const& str) {
     }
   }
   for (size_t i = sign + shift; i < str.size(); i += CHUNK) {
-    *this *= MUL;
+    short_multiply(MUL);
     size_t pos = 0;
     *this += std::stoi(str.substr(i, CHUNK), &pos);
     if (pos != CHUNK) {
@@ -178,6 +178,20 @@ void big_integer::negate() {
   ++*this;
 }
 
+// умножает this на целое rhs
+// pre: this, rhs >= 0
+void big_integer::short_multiply(uint rhs) {
+  uint carry = 0;
+  for (uint& j : n) {
+    unsigned long long mult = j * 1ULL * rhs;
+    mult += carry;
+    j = lo_word(mult);
+    carry = hi_word(mult);
+  }
+  n.push_back(carry);
+  pop_back_unused();
+}
+
 // обычное умножение в столбик. Умножаем this на последний разряд,
 // складываем, учитывая смещение на B^шаг
 // здесь и далее B или b это размер разряда, т.е. MAX_UINT
@@ -188,7 +202,7 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
   }
   big_integer const* prhs = &rhs;
   if (sign2) {
-    auto* tmp = new big_integer(rhs);
+    auto* tmp = new big_integer(rhs); // todo убрать аллокацию?
     tmp->negate();
     prhs = tmp;
   }
@@ -197,7 +211,7 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
     big_integer add;
     add.n.resize(i, 0);
     uint carry = 0;
-    for (unsigned int j : n) {
+    for (uint j : n) {
       unsigned long long mult = j * 1ULL * prhs->n[i];
       mult += carry;
       add.n.push_back(lo_word(mult));
@@ -216,7 +230,7 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
   return *this;
 }
 
-/// divides this by integer rhs, assuming that this > rhs > 0
+/// divides this by integer rhs, assuming that this and rhs > 0
 /// returns reminder
 uint big_integer::short_divide(uint rhs) {
   uint r = 0;
@@ -258,7 +272,7 @@ big_integer big_integer::divide(big_integer const& rhs) {
     v.negate();
   }
 
-  if (div_size(v.n) == 1) {
+  if (div_size(v.n) == 1) { // todo объединить ифы в одну ветку
     big_integer rem = short_divide(v.n[0]);
     if (sign) {
       negate();
@@ -429,9 +443,9 @@ big_integer big_integer::operator+() const {
 }
 
 big_integer big_integer::operator-() const {
-  if (n.empty())
-    return *this;
-  return ++~*this;
+  big_integer copy = *this;
+  copy.negate();
+  return copy;
 }
 
 big_integer big_integer::operator~() const {
@@ -559,27 +573,21 @@ std::string to_string(big_integer const& a) {
     b.negate();
   }
   const size_t CHUNK = 9;
-  const big_integer DIV = (uint)1e9;
-  std::vector<uint> v;
+  const uint DIV = (uint)1e9;
+  std::string res;
   while (b != ZERO) {
-    v.push_back((b % DIV).n[0]);
-    b /= DIV;
-  }
-  std::string res = sign ? "-" : "";
-  for (size_t i = v.size(); i > 0; --i) {
-    if (v[i - 1] == 0 && res.empty()) {
-      continue;
-    }
-    std::string cur = std::to_string(v[i - 1]);
-    if (res.size() > sign && cur.size() < CHUNK) {
-      std::reverse(cur.begin(), cur.end());
-      while (!res.empty() && cur.size() < CHUNK) {
-        cur.push_back('0');
-      }
-      std::reverse(cur.begin(), cur.end());
+    std::string cur = std::to_string(b.short_divide(DIV));
+    std::reverse(cur.begin(), cur.end());
+    while (cur.size() < CHUNK) {
+      cur.push_back('0');
     }
     res += cur;
   }
+  while (!res.empty() && res.back() == '0') {
+    res.pop_back();
+  }
+  res += sign ? "-" : "";
+  std::reverse(res.begin(), res.end());
   if (res.empty()) {
     res += '0';
   }
