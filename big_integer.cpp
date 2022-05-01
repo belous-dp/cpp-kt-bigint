@@ -602,7 +602,39 @@ bool operator>=(big_integer const& a, big_integer const& b) {
 }
 
 std::string to_string(big_integer const& a) {
-  return "";
+  big_integer b = a;
+  bool sign = b.negative();
+  if (sign) {
+    b.negate();
+  }
+  const size_t CHUNK = 9;
+  const big_integer DIV = (uint)1e9;
+  std::vector<int> v;
+  while (b != ZERO) {
+    v.push_back((b % DIV).n[0]);
+    b /= DIV;
+  }
+  std::string res = sign ? "-" : "";
+  for (size_t i = v.size(); i > 0; --i) {
+    if (v[i - 1] == 0 && res.empty()) {
+      continue;
+    }
+    std::string cur = std::to_string(v[i - 1]);
+    if (res.size() > sign && cur.size() < CHUNK) {
+      std::reverse(cur.begin(), cur.end());
+      while (!res.empty() && cur.size() < CHUNK) {
+        cur.push_back('0');
+      }
+      std::reverse(cur.begin(), cur.end());
+      //-100000000000000000
+      //-1000000000000000
+    }
+    res += cur;
+  }
+  if (res.empty()) {
+    res += '0';
+  }
+  return res;
 }
 
 std::ostream& operator<<(std::ostream& s, big_integer const& a) {
