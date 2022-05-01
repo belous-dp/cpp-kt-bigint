@@ -30,8 +30,6 @@
 
 using uint = unsigned int;
 
-const big_integer big_integer::ONE = big_integer(1);
-
 big_integer::big_integer() = default;
 
 big_integer::big_integer(big_integer const& other) = default;
@@ -134,6 +132,20 @@ big_integer& big_integer::operator+=(big_integer const& rhs) {
   add_segment(0, n.size(), rhs);
   pop_back_unused();
   return *this;
+}
+
+void big_integer::short_add(uint rhs) {
+  expand_size(1);
+  n[0] += rhs;
+  uint carry = (n[0] < rhs);
+  rhs = sext(rhs);
+  for (size_t i = 1; i < n.size(); ++i) {
+    n[i] += carry;
+    carry = (n[i] < carry);
+    n[i] += rhs;
+    carry += (n[i] < rhs);
+  }
+  pop_back_unused();
 }
 
 uint big_integer::add_segment(size_t from, size_t to, const big_integer& rhs) {
@@ -256,7 +268,8 @@ big_integer big_integer::divide(big_integer const& rhs) {
     throw std::invalid_argument("division by zero");
   }
   if (*this == rhs) {
-    *this = ONE;
+    n.clear();
+    n.push_back(1); // this = 1
     return {}; // reminder is zero
   }
 
@@ -456,7 +469,8 @@ big_integer big_integer::operator~() const {
 }
 
 big_integer& big_integer::operator++() {
-  return *this += ONE;
+  short_add(1);
+  return *this;
 }
 
 big_integer big_integer::operator++(int) {
@@ -466,7 +480,8 @@ big_integer big_integer::operator++(int) {
 }
 
 big_integer& big_integer::operator--() {
-  return *this -= ONE;
+  short_add(-1);
+  return *this;
 }
 
 big_integer big_integer::operator--(int) {
