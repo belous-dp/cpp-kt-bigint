@@ -30,6 +30,7 @@ private:
   big_integer divide(big_integer const& rhs);
 
   void short_add(uint rhs);
+  void short_add_segment(size_t from, uint rhs, uint add);
   uint add_segment(size_t from, size_t to, const big_integer& rhs);
 
 public:

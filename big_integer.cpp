@@ -15,7 +15,7 @@
  * это сделано для того, чтобы отличать отрицательные числа
  * от больших (> MAX_INT, но < MAX_UINT) положительных
  *
-*/
+ */
 
 #include "big_integer.h"
 #include <bitset>
@@ -43,29 +43,27 @@ uint hi_word(unsigned long long x) {
   return x >> std::numeric_limits<uint>::digits;
 }
 
-big_integer::big_integer(int a) : n(1, a) { }
+big_integer::big_integer(int a) : n(1, static_cast<uint>(a)) {}
 
 big_integer::big_integer(uint a) : n({a, 0}) {
   pop_back_unused();
 }
 
-big_integer::big_integer(long a) : n({lo_word(a), hi_word(a)}) {
+big_integer::big_integer(long a) : big_integer((long long)a) {}
+
+big_integer::big_integer(unsigned long a)
+    : big_integer((unsigned long long)a) {}
+
+big_integer::big_integer(long long a)
+    : n({lo_word(static_cast<unsigned long long>(a)),
+         hi_word(static_cast<unsigned long long>(a))}) {
   pop_back_unused();
 }
 
-big_integer::big_integer(unsigned long a) : n({lo_word(a), hi_word(a), 0}) {
+big_integer::big_integer(unsigned long long a)
+    : n({lo_word(a), hi_word(a), 0}) {
   pop_back_unused();
 }
-
-big_integer::big_integer(long long a) : n({lo_word(a), hi_word(a)}) {
-  pop_back_unused();
-}
-
-big_integer::big_integer(unsigned long long a) : n({lo_word(a), hi_word(a), 0}) {
-  pop_back_unused();
-}
-
-
 
 std::invalid_argument err(std::string const& str) {
   return std::invalid_argument("Invalid 10-based integer: " + str);
@@ -78,7 +76,7 @@ big_integer::big_integer(std::string const& str) {
     throw err(str);
   }
   const size_t CHUNK = 9;
-  const uint MUL = (uint)1e9;
+  const uint MUL = static_cast<uint>(1e9);
   size_t shift = (str.size() - sign) % CHUNK;
   if (shift > 0) {
     size_t pos = 0;
@@ -90,7 +88,7 @@ big_integer::big_integer(std::string const& str) {
   for (size_t i = sign + shift; i < str.size(); i += CHUNK) {
     short_multiply(MUL);
     size_t pos = 0;
-    *this += std::stoi(str.substr(i, CHUNK), &pos);
+    short_add(std::stoi(str.substr(i, CHUNK), &pos));
     if (pos != CHUNK) {
       throw err(str);
     }
@@ -136,16 +134,19 @@ big_integer& big_integer::operator+=(big_integer const& rhs) {
 
 void big_integer::short_add(uint rhs) {
   expand_size(1);
-  n[0] += rhs;
-  uint carry = (n[0] < rhs);
-  rhs = sext(rhs);
-  for (size_t i = 1; i < n.size(); ++i) {
+  short_add_segment(0, rhs, sext(rhs));
+  pop_back_unused();
+}
+
+void big_integer::short_add_segment(size_t from, uint rhs, uint add) {
+  n[from] += rhs;
+  uint carry = (n[from] < rhs);
+  for (size_t i = from + 1; i < n.size() && (carry || add); ++i) {
     n[i] += carry;
     carry = (n[i] < carry);
-    n[i] += rhs;
-    carry += (n[i] < rhs);
+    n[i] += add;
+    carry += (n[i] < add);
   }
-  pop_back_unused();
 }
 
 uint big_integer::add_segment(size_t from, size_t to, const big_integer& rhs) {
@@ -173,7 +174,19 @@ void big_integer::pop_back_unused() {
 }
 
 big_integer& big_integer::operator-=(big_integer const& rhs) {
-  return *this += -rhs;
+  expand_size(rhs.n.size());
+  uint carry = 0;
+  for (size_t i = 0; i < n.size(); ++i) {
+    uint next_carry = (n[i] < carry);
+    n[i] -= carry;
+    carry = next_carry;
+    uint sub = i < rhs.n.size() ? rhs.n[i] : sext(rhs.back());
+    next_carry = (n[i] < sub);
+    n[i] -= sub;
+    carry += next_carry;
+  }
+  pop_back_unused();
+  return *this;
 }
 
 bool big_integer::negative() const {
@@ -215,24 +228,31 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
   if (sign2) {
     v.negate();
   }
-  big_integer res = 0;
+  big_integer res;
+  res.n.resize(n.size() + v.n.size() + 1);
   for (size_t i = 0; i < v.n.size(); ++i) {
-    big_integer add;
-    add.n.resize(i + n.size() + 1);
     uint carry = 0;
     for (size_t j = 0; j < n.size(); ++j) {
       unsigned long long mult = n[j] * 1ULL * v.n[i];
       mult += carry;
-      add.n[i + j] = lo_word(mult);
+      res.short_add_segment(i + j, lo_word(mult), 0);
+      // можно было ещё таскать за собой переменную addition_carry, но это
+      // привело бы к дублированию кода. Ещё, кажется, я +- умею пруфать,
+      // почему short_add будет работать быстро: если у нас переполнился
+      // текущий разряд, мы пойдём дальше и будем переносить переполнение
+      // до тех пор, пока не оно не кончится. Но значит на следующем шаге
+      // (и ещё на стольких шагах, сколько раз мы сделали перенос) переполнения
+      // не будет, и мы будем прибавлять за О(1). Короче, схожая идея, как
+      // при оценке времени работы бинарного счётчика. Амортизированно быстро.
       carry = hi_word(mult);
     }
-    add.n.back() = carry;
-    res += add;
+    res.short_add_segment(i + n.size(), carry, 0);
   }
+  res.pop_back_unused();
   if (sign1 ^ sign2) {
     res.negate();
   }
-  *this = res;
+  swap(res);
   return *this;
 }
 
@@ -245,7 +265,7 @@ uint big_integer::short_divide(uint rhs) {
   for (size_t j = n.size(); j > 0; --j) {
     uint tmp = n[j - 1];
     n[j - 1] = (r * b + tmp) / rhs; // точно помещается в uint
-    r = (r * b + tmp) % rhs; // точно помещается в uint
+    r = (r * b + tmp) % rhs;        // точно помещается в uint
   }
   pop_back_unused();
   return r;
@@ -270,7 +290,7 @@ big_integer big_integer::divide(big_integer const& rhs) {
   if (*this == rhs) {
     n.clear();
     n.push_back(1); // this = 1
-    return {}; // reminder is zero
+    return {};      // reminder is zero
   }
 
   bool sign1 = negative(), sign2 = rhs.negative();
@@ -349,7 +369,6 @@ big_integer big_integer::divide(big_integer const& rhs) {
     rem.short_divide(d);
     n.erase(n.begin(), nth);
     pop_back_unused();
-
   }
 
   if (sign1 ^ sign2) {
@@ -401,11 +420,7 @@ big_integer& big_integer::operator<<=(int shift) {
   assert(shift >= 0);
   int d = shift / std::numeric_limits<uint>::digits;
   int r = shift % std::numeric_limits<uint>::digits;
-  if (d > 0) {
-    std::reverse(n.begin(), n.end());
-    n.resize(n.size() + d, 0);
-    std::reverse(n.begin(), n.end());
-  }
+  n.insert(n.begin(), d, 0);
   if (r > 0) {
     expand_size(n.size() + 1);
     for (size_t i = n.size(); i > 1; --i) {
@@ -422,17 +437,11 @@ big_integer& big_integer::operator<<=(int shift) {
 
 big_integer& big_integer::operator>>=(int shift) {
   assert(shift >= 0);
-  int d = shift / std::numeric_limits<uint>::digits;
+  size_t d = shift / std::numeric_limits<uint>::digits;
   int r = shift % std::numeric_limits<uint>::digits;
-  if (d > 0) {
-    std::reverse(n.begin(), n.end());
-    if (n.size() > d) {
-      n.resize(n.size() - d);
-    } else {
-      n.clear();
-    }
-    std::reverse(n.begin(), n.end());
-  }
+  auto dth = n.begin();
+  std::advance(dth, std::min(d, n.size()));
+  n.erase(n.begin(), dth);
   if (r > 0) {
     for (size_t i = 1; i < n.size(); ++i) {
       n[i - 1] >>= r;
@@ -555,7 +564,7 @@ bool operator<(big_integer const& a, big_integer const& b) {
 }
 
 bool operator>(big_integer const& a, big_integer const& b) {
-  return !(a < b || a == b);
+  return b < a;
 }
 
 bool operator<=(big_integer const& a, big_integer const& b) {
@@ -587,13 +596,13 @@ std::string to_string(big_integer const& a) {
     b.negate();
   }
   const size_t CHUNK = 9;
-  const uint DIV = (uint)1e9;
+  const uint DIV = static_cast<uint>(1e9);
   std::string res;
   while (!b.is_zero()) {
     std::string cur = std::to_string(b.short_divide(DIV));
     std::reverse(cur.begin(), cur.end());
     while (cur.size() < CHUNK) {
-      cur +='0';
+      cur += '0';
     }
     res += cur;
   }
