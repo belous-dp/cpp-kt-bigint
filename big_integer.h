@@ -1,15 +1,16 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <iosfwd>
 #include <string>
 #include <vector>
 
-using uint = unsigned int;
+using uint = uint32_t;
 
 struct big_integer {
 private:
-  std::vector<uint> n;
+  std::vector<uint> num;
 
   unsigned int back() const;
   void expand_size(size_t size);

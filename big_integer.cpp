@@ -1,7 +1,7 @@
 /**
  * Числа хранятся следующим образом:
  * вектор из 32-битных беззнаковых разрядов;
- * младший разряд лежит в n[0];
+ * младший разряд лежит в num[0];
  * дополнение до двух, но немного модифицированное
  * если число отрицательное, его запись совпадает с обычным дополнением до двух
  * если число положительное, возможны две ситуации
@@ -21,6 +21,7 @@
 #include <bitset>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <iostream>
@@ -28,24 +29,24 @@
 #include <ostream>
 #include <stdexcept>
 
-using uint = unsigned int;
+using uint = uint32_t;
 
 big_integer::big_integer() = default;
 
 big_integer::big_integer(big_integer const& other) = default;
 
-uint lo_word(unsigned long long x) {
+uint lo_word(uint64_t x) {
   uint mask = -1;
   return x & mask;
 }
 
-uint hi_word(unsigned long long x) {
+uint hi_word(uint64_t x) {
   return x >> std::numeric_limits<uint>::digits;
 }
 
-big_integer::big_integer(int a) : n(1, static_cast<uint>(a)) {}
+big_integer::big_integer(int a) : num(1, static_cast<uint>(a)) {}
 
-big_integer::big_integer(uint a) : n({a, 0}) {
+big_integer::big_integer(uint a) : num({a, 0}) {
   pop_back_unused();
 }
 
@@ -55,13 +56,13 @@ big_integer::big_integer(unsigned long a)
     : big_integer((unsigned long long)a) {}
 
 big_integer::big_integer(long long a)
-    : n({lo_word(static_cast<unsigned long long>(a)),
-         hi_word(static_cast<unsigned long long>(a))}) {
+    : num({lo_word(static_cast<uint64_t>(a)),
+         hi_word(static_cast<uint64_t>(a))}) {
   pop_back_unused();
 }
 
 big_integer::big_integer(unsigned long long a)
-    : n({lo_word(a), hi_word(a), 0}) {
+    : num({lo_word(a), hi_word(a), 0}) {
   pop_back_unused();
 }
 
@@ -80,7 +81,7 @@ big_integer::big_integer(std::string const& str) {
   size_t shift = (str.size() - sign) % CHUNK;
   if (shift > 0) {
     size_t pos = 0;
-    n.push_back(std::stoi(str.substr(sign, shift), &pos));
+    num.push_back(std::stoi(str.substr(sign, shift), &pos));
     if (pos != shift) {
       throw err(str);
     }
@@ -109,7 +110,7 @@ big_integer& big_integer::operator=(big_integer const& other) {
 }
 
 void big_integer::swap(big_integer& other) {
-  std::swap(n, other.n);
+  std::swap(num, other.num);
 }
 
 uint msb(uint x) {
@@ -122,12 +123,12 @@ uint sext(uint x) {   // sign extension
 }
 
 uint big_integer::back() const {
-  return n.empty() ? 0 : n.back();
+  return num.empty() ? 0 : num.back();
 }
 
 big_integer& big_integer::operator+=(big_integer const& rhs) {
-  expand_size(rhs.n.size());
-  add_segment(0, n.size(), rhs);
+  expand_size(rhs.num.size());
+  add_segment(0, num.size(), rhs);
   pop_back_unused();
   return *this;
 }
@@ -139,50 +140,50 @@ void big_integer::short_add(uint rhs) {
 }
 
 void big_integer::short_add_segment(size_t from, uint rhs, uint add) {
-  n[from] += rhs;
-  uint carry = (n[from] < rhs);
-  for (size_t i = from + 1; i < n.size() && (carry || add); ++i) {
-    n[i] += carry;
-    carry = (n[i] < carry);
-    n[i] += add;
-    carry += (n[i] < add);
+  num[from] += rhs;
+  uint carry = (num[from] < rhs);
+  for (size_t i = from + 1; i < num.size() && (carry || add); ++i) {
+    num[i] += carry;
+    carry = (num[i] < carry);
+    num[i] += add;
+    carry += (num[i] < add);
   }
 }
 
 uint big_integer::add_segment(size_t from, size_t to, const big_integer& rhs) {
   uint carry = 0;
   for (size_t i = from, j = 0; i < to; ++i, ++j) {
-    n[i] += carry;
-    carry = (n[i] < carry);
-    uint add = j < rhs.n.size() ? rhs.n[j] : sext(rhs.back());
-    n[i] += add;
-    carry += (n[i] < add);
+    num[i] += carry;
+    carry = (num[i] < carry);
+    uint add = j < rhs.num.size() ? rhs.num[j] : sext(rhs.back());
+    num[i] += add;
+    carry += (num[i] < add);
   }
   return carry;
 }
 
 void big_integer::expand_size(size_t size) {
-  n.resize(std::max(n.size() + 1, size), sext(back()));
+  num.resize(std::max(num.size() + 1, size), sext(back()));
 }
 
 void big_integer::pop_back_unused() {
   // если последний разряд все 1, и предпоследний точно отрицательный,
   // либо если последний разряд все 0 и предпоследний точно положительный
-  while (n.size() >= 2 && sext(n[n.size() - 2]) == n[n.size() - 1]) {
-    n.pop_back();
+  while (num.size() >= 2 && sext(num[num.size() - 2]) == num[num.size() - 1]) {
+    num.pop_back();
   }
 }
 
 big_integer& big_integer::operator-=(big_integer const& rhs) {
-  expand_size(rhs.n.size());
+  expand_size(rhs.num.size());
   uint carry = 0;
-  for (size_t i = 0; i < n.size(); ++i) {
-    uint next_carry = (n[i] < carry);
-    n[i] -= carry;
+  for (size_t i = 0; i < num.size(); ++i) {
+    uint next_carry = (num[i] < carry);
+    num[i] -= carry;
     carry = next_carry;
-    uint sub = i < rhs.n.size() ? rhs.n[i] : sext(rhs.back());
-    next_carry = (n[i] < sub);
-    n[i] -= sub;
+    uint sub = i < rhs.num.size() ? rhs.num[i] : sext(rhs.back());
+    next_carry = (num[i] < sub);
+    num[i] -= sub;
     carry += next_carry;
   }
   pop_back_unused();
@@ -194,9 +195,9 @@ bool big_integer::negative() const {
 }
 
 void big_integer::negate() {
-  if (n.empty())
+  if (num.empty())
     return;
-  for (uint& i : n) {
+  for (uint& i : num) {
     i = ~i;
   }
   ++*this;
@@ -206,13 +207,13 @@ void big_integer::negate() {
 // pre: this, rhs >= 0
 void big_integer::short_multiply(uint rhs) {
   uint carry = 0;
-  for (uint& j : n) {
-    unsigned long long mult = j * 1ULL * rhs;
+  for (uint& j : num) {
+    uint64_t mult = j * 1ULL * rhs;
     mult += carry;
     j = lo_word(mult);
     carry = hi_word(mult);
   }
-  n.push_back(carry);
+  num.push_back(carry);
   pop_back_unused();
 }
 
@@ -229,11 +230,11 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
     v.negate();
   }
   big_integer res;
-  res.n.resize(n.size() + v.n.size() + 1);
-  for (size_t i = 0; i < v.n.size(); ++i) {
+  res.num.resize(num.size() + v.num.size() + 1);
+  for (size_t i = 0; i < v.num.size(); ++i) {
     uint carry = 0;
-    for (size_t j = 0; j < n.size(); ++j) {
-      unsigned long long mult = n[j] * 1ULL * v.n[i];
+    for (size_t j = 0; j < num.size(); ++j) {
+      uint64_t mult = num[j] * 1ULL * v.num[i];
       mult += carry;
       res.short_add_segment(i + j, lo_word(mult), 0);
       // можно было ещё таскать за собой переменную addition_carry, но это
@@ -246,7 +247,7 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
       // при оценке времени работы бинарного счётчика. Амортизированно быстро.
       carry = hi_word(mult);
     }
-    res.short_add_segment(i + n.size(), carry, 0);
+    res.short_add_segment(i + num.size(), carry, 0);
   }
   res.pop_back_unused();
   if (sign1 ^ sign2) {
@@ -260,11 +261,11 @@ big_integer& big_integer::operator*=(big_integer const& rhs) {
 /// returns reminder
 uint big_integer::short_divide(uint rhs) {
   uint r = 0;
-  n.push_back(0);
-  const unsigned long long b = std::numeric_limits<uint>::max() + 1ULL;
-  for (size_t j = n.size(); j > 0; --j) {
-    uint tmp = n[j - 1];
-    n[j - 1] = (r * b + tmp) / rhs; // точно помещается в uint
+  num.push_back(0);
+  const uint64_t b = std::numeric_limits<uint>::max() + 1ULL;
+  for (size_t j = num.size(); j > 0; --j) {
+    uint tmp = num[j - 1];
+    num[j - 1] = (r * b + tmp) / rhs; // точно помещается в uint
     r = (r * b + tmp) % rhs;        // точно помещается в uint
   }
   pop_back_unused();
@@ -276,7 +277,7 @@ size_t div_size(std::vector<uint> const& v) {
 }
 
 bool big_integer::is_zero() const {
-  return n.size() <= 1 && back() == 0;
+  return num.size() <= 1 && back() == 0;
 }
 
 /// divides this by big_integer rhs
@@ -288,8 +289,8 @@ big_integer big_integer::divide(big_integer const& rhs) {
     throw std::invalid_argument("division by zero");
   }
   if (*this == rhs) {
-    n.clear();
-    n.push_back(1); // this = 1
+    num.clear();
+    num.push_back(1); // this = 1
     return {};      // reminder is zero
   }
 
@@ -308,34 +309,34 @@ big_integer big_integer::divide(big_integer const& rhs) {
   // но вроде из-за всякой магии с move ничего не изменится
   // можно сравнить текущую версию с предыдущим коммитом
   big_integer rem;
-  if (div_size(v.n) == 1) {
-    rem = short_divide(v.n[0]);
-  } else if (div_size(n) < div_size(v.n)) {
+  if (div_size(v.num) == 1) {
+    rem = short_divide(v.num[0]);
+  } else if (div_size(num) < div_size(v.num)) {
     rem = *this;
-    n.clear(); // *this = 0
+    num.clear(); // *this = 0
   } else {
 
-    const size_t sn = div_size(v.n);
-    const size_t sm = div_size(n) - sn;
-    const unsigned long long b = std::numeric_limits<uint>::max() + 1ULL;
+    const size_t sn = div_size(v.num);
+    const size_t sm = div_size(num) - sn;
+    const uint64_t b = std::numeric_limits<uint>::max() + 1ULL;
     // D1
-    uint d = b / (v.n[sn - 1] + 1);
+    uint d = b / (v.num[sn - 1] + 1);
     *this *= d;
     v *= d;
-    if (n.size() < sm + sn + 1) {
-      n.push_back(0);
+    if (num.size() < sm + sn + 1) {
+      num.push_back(0);
     }
-    assert(n.size() == sm + sn + 1);
-    // quotient stored in the greatest sm + 1 blocks of n
-    // reminder stored in the lowest sn blocks of n
+    assert(num.size() == sm + sn + 1);
+    // quotient stored in the greatest sm + 1 blocks of num
+    // reminder stored in the lowest sn blocks of num
     // D2-D7
     for (size_t j = sm; j >= 0; --j) {
       // D3
-      unsigned long long q0 = (n[j + sn] * b + n[j + sn - 1]) / v.n[sn - 1];
-      unsigned long long r0 = (n[j + sn] * b + n[j + sn - 1]) % v.n[sn - 1];
-      while ((q0 == b || q0 * v.n[sn - 2] > b * r0 + n[j + sn - 2]) && r0 < b) {
+      uint64_t q0 = (num[j + sn] * b + num[j + sn - 1]) / v.num[sn - 1];
+      uint64_t r0 = (num[j + sn] * b + num[j + sn - 1]) % v.num[sn - 1];
+      while ((q0 == b || q0 * v.num[sn - 2] > b * r0 + num[j + sn - 2]) && r0 < b) {
         q0--;
-        r0 += v.n[sn - 1];
+        r0 += v.num[sn - 1];
       }
       // D4-D5
       //  at this step q < b
@@ -357,17 +358,17 @@ big_integer big_integer::divide(big_integer const& rhs) {
         q--;
         add_segment(j, j + sn + 1, v);
       }
-      n[j + sn] = q;
+      num[j + sn] = q;
       if (j == 0) {
         break;
       }
     }
     // хотим вытащить нижние sn разрядов в rem, и затем удалить
-    auto nth = n.begin();
+    auto nth = num.begin();
     std::advance(nth, sn);
-    rem.n = std::vector<uint>(n.begin(), nth);
+    rem.num = std::vector<uint>(num.begin(), nth);
     rem.short_divide(d);
-    n.erase(n.begin(), nth);
+    num.erase(num.begin(), nth);
     pop_back_unused();
   }
 
@@ -395,10 +396,10 @@ big_integer::apply_bitwise_operator(big_integer const& rhs,
                                     const std::function<uint(uint, uint)>& op) {
   // вопрос: можно ли здесь как-то вместо functional
   // использовать указатели на функции?
-  expand_size(rhs.n.size());
-  for (size_t i = 0; i < n.size(); ++i) {
-    uint other = i < rhs.n.size() ? rhs.n[i] : sext(rhs.back());
-    n[i] = op(n[i], other);
+  expand_size(rhs.num.size());
+  for (size_t i = 0; i < num.size(); ++i) {
+    uint other = i < rhs.num.size() ? rhs.num[i] : sext(rhs.back());
+    num[i] = op(num[i], other);
   }
   pop_back_unused();
   return *this;
@@ -420,15 +421,15 @@ big_integer& big_integer::operator<<=(int shift) {
   assert(shift >= 0);
   int d = shift / std::numeric_limits<uint>::digits;
   int r = shift % std::numeric_limits<uint>::digits;
-  n.insert(n.begin(), d, 0);
+  num.insert(num.begin(), d, 0);
   if (r > 0) {
-    expand_size(n.size() + 1);
-    for (size_t i = n.size(); i > 1; --i) {
-      n[i - 1] <<= r;
-      n[i - 1] |= n[i - 2] >> (std::numeric_limits<uint>::digits - r);
+    expand_size(num.size() + 1);
+    for (size_t i = num.size(); i > 1; --i) {
+      num[i - 1] <<= r;
+      num[i - 1] |= num[i - 2] >> (std::numeric_limits<uint>::digits - r);
     }
-    if (!n.empty()) {
-      n[0] <<= r;
+    if (!num.empty()) {
+      num[0] <<= r;
     }
   }
   pop_back_unused();
@@ -439,20 +440,20 @@ big_integer& big_integer::operator>>=(int shift) {
   assert(shift >= 0);
   size_t d = shift / std::numeric_limits<uint>::digits;
   int r = shift % std::numeric_limits<uint>::digits;
-  auto dth = n.begin();
-  std::advance(dth, std::min(d, n.size()));
-  n.erase(n.begin(), dth);
+  auto dth = num.begin();
+  std::advance(dth, std::min(d, num.size()));
+  num.erase(num.begin(), dth);
   if (r > 0) {
-    for (size_t i = 1; i < n.size(); ++i) {
-      n[i - 1] >>= r;
-      n[i - 1] |= n[i] << (std::numeric_limits<uint>::digits - r);
+    for (size_t i = 1; i < num.size(); ++i) {
+      num[i - 1] >>= r;
+      num[i - 1] |= num[i] << (std::numeric_limits<uint>::digits - r);
     }
-    if (!n.empty()) {
-      uint tail = sext(n.back());
-      n.back() >>= r;
+    if (!num.empty()) {
+      uint tail = sext(num.back());
+      num.back() >>= r;
       tail >>= (std::numeric_limits<uint>::digits - r);
       tail <<= (std::numeric_limits<uint>::digits - r);
-      n.back() |= tail;
+      num.back() |= tail;
     }
   }
   pop_back_unused();
@@ -471,7 +472,7 @@ big_integer big_integer::operator-() const {
 
 big_integer big_integer::operator~() const {
   big_integer res(*this);
-  for (uint& i : res.n) {
+  for (uint& i : res.num) {
     i = ~i;
   }
   return res;
@@ -540,8 +541,8 @@ big_integer operator>>(big_integer a, int b) {
 }
 
 bool operator==(big_integer const& a, big_integer const& b) {
-  return a.n == b.n ||
-         (a.n.size() <= 1 && b.n.size() <= 1 && a.back() == b.back());
+  return a.num == b.num ||
+         (a.num.size() <= 1 && b.num.size() <= 1 && a.back() == b.back());
 }
 
 bool operator!=(big_integer const& a, big_integer const& b) {
@@ -552,12 +553,12 @@ bool operator<(big_integer const& a, big_integer const& b) {
   if (a.negative() ^ b.negative()) {
     return a.negative() && !b.negative();
   }
-  if (a.n.size() != b.n.size()) {
-    return (a.n.size() < b.n.size()) ^ a.negative();
+  if (a.num.size() != b.num.size()) {
+    return (a.num.size() < b.num.size()) ^ a.negative();
   }
-  for (size_t i = a.n.size(); i > 0; --i) {
-    if (a.n[i - 1] != b.n[i - 1]) {
-      return a.n[i - 1] < b.n[i - 1];
+  for (size_t i = a.num.size(); i > 0; --i) {
+    if (a.num[i - 1] != b.num[i - 1]) {
+      return a.num[i - 1] < b.num[i - 1];
     }
   }
   return false;
@@ -576,11 +577,11 @@ bool operator>=(big_integer const& a, big_integer const& b) {
 }
 
 std::string big_integer::to_bin_string() const {
-  if (n.empty()) {
+  if (num.empty()) {
     return "0";
   }
   std::string res;
-  for (uint i : n) {
+  for (uint i : num) {
     std::string str =
         std::bitset<std::numeric_limits<uint>::digits>(i).to_string();
     std::reverse(str.begin(), str.end());
